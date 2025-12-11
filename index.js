@@ -48,7 +48,7 @@ res.send(result)
 
 //Search Donors Api
 
-app.get("/donors", async(req,res)=>{
+app.get("/donors/search", async(req,res)=>{
     try{
         const {bloodGroup, district, upazila}=req.query;
 
@@ -67,6 +67,25 @@ app.get("/donors", async(req,res)=>{
     res.status(500).send({ message: "Server Error" });
   }
 })
+
+
+// search donors by email for dashboard role (api)
+app.get("/donors/role", async (req, res) => {
+  const email = req.query.email;
+
+  const donor = await donorsCollection.findOne({ email });
+
+  if (!donor) {
+    return res.status(404).send({ message: "Donor not found" });
+  }
+
+  res.send({ role: donor.role });
+});
+
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
