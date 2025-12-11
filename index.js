@@ -38,9 +38,7 @@ async function run() {
 //Donors APi
 
 
-    app.get('/donors', async(req, res) => {
-  res.send('Hello World!')
-})
+ 
 
 app.post('/donors', async(req,res)=>{
 const donor = req.body;
@@ -48,7 +46,27 @@ const result =await donorsCollection.insertOne(donor)
 res.send(result)
 })
 
+//Search Donors Api
 
+app.get("/donors", async(req,res)=>{
+    try{
+        const {bloodGroup, district, upazila}=req.query;
+
+        const query ={};
+
+        if ( bloodGroup) query.bloodGroup =bloodGroup
+        if (district) query.district = district;
+        if (upazila) query.upazila = upazila;
+        // Find matching donors
+    const donors = await donorsCollection.find(query).toArray();
+     res.send(donors);
+
+    }
+    catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Server Error" });
+  }
+})
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
