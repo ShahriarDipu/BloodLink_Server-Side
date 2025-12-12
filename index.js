@@ -82,8 +82,35 @@ app.get("/donors/role", async (req, res) => {
   res.send({ role: donor.role });
 });
 
+//search donor information based on email
+app.get("/donors/by-email", async (req, res) => {
+  const email = req.query.email;
 
+  if (!email) {
+    return res.status(400).send({ message: "Email is required" });
+  }
 
+  const donor = await donorsCollection.findOne({ email });
+
+  if (!donor) {
+    return res.status(404).send({ message: "Donor not found" });
+  }
+
+  res.send(donor);
+});
+
+//Implementing Edit Button here
+app.patch("/donors/update/:email", async (req, res) => {
+  const email = req.params.email;
+  const updatedData = req.body;
+
+  const result = await donorsCollection.updateOne(
+    { email },
+    { $set: updatedData }
+  );
+
+  res.send(result);
+});
 
 
 
