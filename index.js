@@ -34,7 +34,7 @@ async function run() {
     await client.connect();
     const db = client.db("bloodLink_db")
     const donorsCollection=db.collection('donors')
-    
+     const  donationRequestsCollection= db.collection("donationRequest")
 //Donors APi
 
 
@@ -112,6 +112,16 @@ app.patch("/donors/update/:email", async (req, res) => {
   res.send(result);
 });
 
+///post donation requests
+app.post("/donationrequests", async (req, res) => {
+  const donationRequest = req.body;
+
+  const result = await donationRequestsCollection.insertOne(
+    donationRequest
+  );
+
+  res.send(result);
+});
 
 
     // Send a ping to confirm a successful connection
