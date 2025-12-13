@@ -123,6 +123,83 @@ app.post("/donationrequests", async (req, res) => {
   res.send(result);
 });
 
+/// get donation request based on users
+app.get("/donationRequests", async (req, res) => {
+  const { email, status = "all", page = 1, limit = 5 } = req.query;
+
+  if (!email) {
+    return res.send({ total: 0, requests: [] });
+  }
+
+  const query = { requesterEmail: email };
+
+  if (status !== "all") {
+    query.status = status;
+  }
+
+  const skip = (page - 1) * limit;
+
+  const total = await donationRequestsCollection.countDocuments(query);
+
+  const requests = await donationRequestsCollection
+    .find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit))
+    .toArray();
+
+  res.send({ total, requests });
+});
+
+const { ObjectId } = require("mongodb");
+
+// GET single donation request by ID
+app.get("/donationRequests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = { _id: new ObjectId(id) };
+
+    const request = await donationRequestsCollection.findOne(query);
+
+    if (!request) {
+      return res.status(404).send({ message: "Donation request not found" });
+    }
+
+    res.send(request);
+  } catch (error) {
+    console.error(error);
+    res.status(400).send({ message: "Invalid ID format" });
+  }
+});
+
+
+// UPDATE donation request by ID
+app.put("/donationRequests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updatedData = req.body;
+
+    const result = await donationRequestsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Donation request not found" });
+    }
+
+    res.send({
+      success: true,
+      message: "Donation request updated successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to update donation request" });
+  }
+});
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
