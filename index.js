@@ -198,7 +198,26 @@ app.put("/donationRequests/:id", async (req, res) => {
     res.status(500).send({ message: "Failed to update donation request" });
   }
 });
+// app.delete("/donationRequests/:id", verifyToken, async (req, res) => {
 
+app.delete("/donationRequests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await donationRequestsCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Request not found" });
+    }
+
+    res.send({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error("Delete error:", error);
+    res.status(500).send({ message: "Failed to delete request" });
+  }
+});
 
 
     // Send a ping to confirm a successful connection
