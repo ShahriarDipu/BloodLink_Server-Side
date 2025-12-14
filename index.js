@@ -35,6 +35,80 @@ async function run() {
     const db = client.db("bloodLink_db")
     const donorsCollection=db.collection('donors')
      const  donationRequestsCollection= db.collection("donationRequest")
+     const fundingsCollection = db.collection("fundings");
+
+
+
+//stripe intrigation
+
+
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+
+
+////create stripe
+app.post("/create-checkout-session", async (req, res) => {
+  const { amount, email } = req.body;
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    mode: "payment",
+    line_items: [
+      {
+        price_data: {
+          currency: "bdt",
+          product_data: {
+            name: "Donation Fund",
+          },
+          unit_amount: amount * 100,
+        },
+        quantity: 1,
+      },
+    ],
+    customer_email: email,
+
+    success_url: `${process.env.CLIENT_URL}/donorDashboard/donorFunding?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.CLIENT_URL}/funding-cancel`,
+  });
+
+  res.send({ url: session.url });
+});
+
+//post funding to database
+app.post("/fundings", async (req, res) => {
+  const fund = {
+    ...req.body,
+    createdAt: new Date(),
+  };
+
+  const result = await fundingsCollection.insertOne(fund);
+  res.send(result);
+});
+
+
+//get funding from database
+
+app.get("/fundings", async (req, res) => {
+  const result = await fundingsCollection
+    .find()
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
+
+
+
+//get total fundings
+app.get("/fundings/total", async (req, res) => {
+  const result = await fundingsCollection.aggregate([
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]).toArray();
+
+  res.send({ total: result[0]?.total || 0 });
+});
+
 //Donors APi
 
 
@@ -122,6 +196,10 @@ app.post("/donationrequests", async (req, res) => {
 
   res.send(result);
 });
+
+
+//all donation request
+
 
 /// get donation request based on users
 app.get("/donationRequests", async (req, res) => {
@@ -223,7 +301,6 @@ app.delete("/donationRequests/:id", async (req, res) => {
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
-
 
 
 
