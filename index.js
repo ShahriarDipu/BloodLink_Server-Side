@@ -199,6 +199,43 @@ app.post("/donationrequests", async (req, res) => {
 
 
 //all donation request
+app.get("/donors",  async (req, res) => {
+  const { status = "all", page = 1, limit = 5 } = req.query;
+
+  const query = {};
+  if (status !== "all") {
+    query.status = status;
+  }
+
+  const pageNumber = Number(page);
+  const pageSize = Number(limit);
+  const skip = (pageNumber - 1) * pageSize;
+
+  const total = await donorsCollection.countDocuments(query);
+
+  const users = await donorsCollection
+    .find(query)
+    .skip(skip)
+    .limit(pageSize)
+    .toArray();
+
+  res.send({ total, users });
+});
+
+//Update donor status
+// update donor status
+app.patch("/donors/status/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const result = await donorsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status } }
+  );
+
+  res.send(result);
+});
+
 
 
 /// get donation request based on users
