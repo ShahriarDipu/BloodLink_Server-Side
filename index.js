@@ -222,7 +222,7 @@ app.get("/donors",  async (req, res) => {
   res.send({ total, users });
 });
 
-//Update donor status
+
 // update donor status
 app.patch("/donors/status/:id", async (req, res) => {
   const { id } = req.params;
@@ -231,6 +231,18 @@ app.patch("/donors/status/:id", async (req, res) => {
   const result = await donorsCollection.updateOne(
     { _id: new ObjectId(id) },
     { $set: { status } }
+  );
+
+  res.send(result);
+});
+//update donor role from admin
+app.patch("/donors/role/:id", async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+
+  const result = await donorsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { role } }
   );
 
   res.send(result);
