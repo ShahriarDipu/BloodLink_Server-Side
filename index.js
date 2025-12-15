@@ -251,14 +251,47 @@ app.patch("/donors/role/:id", async (req, res) => {
 
 
 /// get donation request based on users
-app.get("/donationRequests", async (req, res) => {
+// app.get("/donationRequests", async (req, res) => {
+//   const { email, status = "all", page = 1, limit = 5 } = req.query;
+
+//   if (!email) {
+//     return res.send({ total: 0, requests: [] });
+//   }
+
+//   const query = { requesterEmail: email };
+
+//   if (status !== "all") {
+//     query.status = status;
+//   }
+
+//   const skip = (page - 1) * limit;
+
+//   const total = await donationRequestsCollection.countDocuments(query);
+
+//   const requests = await donationRequestsCollection
+//     .find(query)
+//     .sort({ createdAt: -1 })
+//     .skip(skip)
+//     .limit(Number(limit))
+//     .toArray();
+
+//   res.send({ total, requests });
+// });
+// GET donation requests for donor dashboard
+app.get("/donationrequests", async (req, res) => {
   const { email, status = "all", page = 1, limit = 5 } = req.query;
 
   if (!email) {
     return res.send({ total: 0, requests: [] });
   }
 
-  const query = { requesterEmail: email };
+  // 🔥 IMPORTANT: requester OR donor
+  const query = {
+    $or: [
+      { requesterEmail: email },
+      { donorEmail: email },
+    ],
+  };
 
   if (status !== "all") {
     query.status = status;
@@ -276,6 +309,38 @@ app.get("/donationRequests", async (req, res) => {
     .toArray();
 
   res.send({ total, requests });
+});
+
+
+
+// GET pending donation requests with pagination
+app.get("/donationrequests/pending", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 8;
+    const skip = (page - 1) * limit;
+
+    const query = { status: "pending" };
+
+    const total = await donationRequestsCollection.countDocuments(query);
+
+    const requests = await donationRequestsCollection
+      .find(query)
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 }) // optional: newest first
+      .toArray();
+
+    res.send({
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      requests,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to fetch pending donation requests" });
+  }
 });
 
 const { ObjectId } = require("mongodb");
@@ -300,6 +365,14 @@ app.get("/donationRequests/:id", async (req, res) => {
   }
 });
 
+
+
+
+
+
+app.get("/donationRequests/all", async(req,res)=>{
+
+})
 
 // UPDATE donation request by ID
 app.put("/donationRequests/:id", async (req, res) => {
@@ -344,6 +417,29 @@ app.delete("/donationRequests/:id", async (req, res) => {
     console.error("Delete error:", error);
     res.status(500).send({ message: "Failed to delete request" });
   }
+});
+
+
+
+
+
+
+
+
+
+app.post("/donationrequests", async (req, res) => {
+  const { requesterEmail } = req.body;
+
+  const user = await donorsCollection.findOne({ email: requesterEmail });
+
+  if (user?.status === "blocked") {
+    return res.status(403).send({
+      message: "Account is blocked",
+    });
+  }
+
+  const result = await donationRequestsCollection.insertOne(req.body);
+  res.send(result);
 });
 
 
