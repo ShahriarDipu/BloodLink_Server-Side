@@ -144,10 +144,29 @@ app.get("/donors/search", async(req,res)=>{
 
 
 // search donors by email for dashboard role (api)
-app.get("/donors/role", async (req, res) => {
-  const email = req.query.email;
+// app.get("/donors/role", async (req, res) => {
+//   const email = req.query.email;
 
-  const donor = await donorsCollection.findOne({ email });
+//   const donor = await donorsCollection.findOne({ email });
+
+//   if (!donor) {
+//     return res.status(404).send({ message: "Donor not found" });
+//   }
+
+//   res.send({ role: donor.role });
+// });
+
+/// regax implemented to varify email from many condition
+app.get("/donors/role", async (req, res) => {
+  const email = req.query.email?.toLowerCase().trim();
+
+  if (!email) {
+    return res.status(400).send({ message: "Email is required" });
+  }
+
+  const donor = await donorsCollection.findOne({
+    email: { $regex: `^${email}$`, $options: "i" }
+  });
 
   if (!donor) {
     return res.status(404).send({ message: "Donor not found" });
@@ -155,6 +174,23 @@ app.get("/donors/role", async (req, res) => {
 
   res.send({ role: donor.role });
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //search donor information based on email
 app.get("/donors/by-email", async (req, res) => {
@@ -343,6 +379,36 @@ app.get("/donationrequests/pending", async (req, res) => {
   }
 });
 
+// GET ALL donation requests (admin)
+app.get("/donationrequests/admin", async (req, res) => {
+  const { status = "all", page = 1, limit = 5 } = req.query;
+
+  const query = {};
+  if (status !== "all") {
+    query.status = status;
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const total = await donationRequestsCollection.countDocuments(query);
+
+  const requests = await donationRequestsCollection
+    .find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit))
+    .toArray();
+
+  res.send({ total, requests });
+});
+
+
+
+
+
+
+
+
 const { ObjectId } = require("mongodb");
 
 // GET single donation request by ID
@@ -400,25 +466,54 @@ app.put("/donationRequests/:id", async (req, res) => {
 });
 // app.delete("/donationRequests/:id", verifyToken, async (req, res) => {
 
-app.delete("/donationRequests/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+// app.delete("/donationRequests/:id", async (req, res) => {
+//   try {
+//     const { id } = req.params;
 
-    const result = await donationRequestsCollection.deleteOne({
-      _id: new ObjectId(id),
-    });
+//     const result = await donationRequestsCollection.deleteOne({
+//       _id: new ObjectId(id),
+//     });
 
-    if (result.deletedCount === 0) {
-      return res.status(404).send({ message: "Request not found" });
-    }
+//     if (result.deletedCount === 0) {
+//       return res.status(404).send({ message: "Request not found" });
+//     }
 
-    res.send({ success: true, deletedCount: result.deletedCount });
-  } catch (error) {
-    console.error("Delete error:", error);
-    res.status(500).send({ message: "Failed to delete request" });
+//     res.send({ success: true, deletedCount: result.deletedCount });
+//   } catch (error) {
+//     console.error("Delete error:", error);
+//     res.status(500).send({ message: "Failed to delete request" });
+//   }
+// });
+
+app.delete("/donationrequests/:id", async (req, res) => {
+  const { id } = req.params;
+  const { email } = req.query; // logged-in user email
+
+  if (!email) {
+    return res.status(401).send({ message: "Unauthorized" });
   }
-});
 
+  const request = await donationRequestsCollection.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!request) {
+    return res.status(404).send({ message: "Request not found" });
+  }
+
+  // 🔥 Ownership check
+  if (request.requesterEmail !== email) {
+    return res.status(403).send({
+      message: "You are not allowed to delete this request",
+    });
+  }
+
+  await donationRequestsCollection.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  res.send({ success: true });
+});
 
 
 
@@ -441,6 +536,77 @@ app.post("/donationrequests", async (req, res) => {
   const result = await donationRequestsCollection.insertOne(req.body);
   res.send(result);
 });
+
+
+
+
+app.patch("/donationrequests/status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, email } = req.body;
+
+    if (!status || !email) {
+      return res.status(400).send({ message: "Missing data" });
+    }
+
+    const query = { _id: new ObjectId(id) };
+    const request = await donationRequestsCollection.findOne(query);
+
+    if (!request) {
+      return res.status(404).send({ message: "Request not found" });
+    }
+
+    // ✅ Only donor can change inprogress → done/pending
+    if (request.donorEmail !== email) {
+      return res.status(403).send({ message: "Unauthorized" });
+    }
+
+    // ✅ Cancel = back to pending (not canceled)
+    if (status === "pending") {
+      await donationRequestsCollection.updateOne(query, {
+        $set: { status: "pending" },
+        $unset: { donorEmail: "", donorName: "" },
+      });
+    } else {
+      await donationRequestsCollection.updateOne(query, {
+        $set: { status },
+      });
+    }
+
+    res.send({ message: "Status updated" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Status update failed" });
+  }
+});
+
+////change status from admin
+// ✅ ADMIN can change any donation status
+app.patch("/donationrequests/admin/status/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid ID format" });
+  }
+
+  if (!status) {
+    return res.status(400).send({ message: "Status required" });
+  }
+
+  const result = await donationRequestsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status } }
+  );
+
+  if (result.matchedCount === 0) {
+    return res.status(404).send({ message: "Request not found" });
+  }
+
+  res.send({ success: true, message: "Status updated by admin" });
+});
+
+
 
 
     // Send a ping to confirm a successful connection
