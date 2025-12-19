@@ -12,6 +12,33 @@ app.use(express.json())
 app.use(cors())
 
 
+const admin = require("firebase-admin");
+
+const  serviceAccount = require("./bloodlink-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+const verifyFBToken= async(req,res,next)=>{
+
+  const token =req.headers.authorization;
+  if(!token){
+    return res.status(401).send({message:'Unauthorized access'})
+  }
+  try{
+   const idToken= token.split(' ')[1];
+   const decoded =await admin.auth().verifyIdToken(idToken)
+   console.log(decoded)
+   req.decoded_email = decoded.email;
+    next();
+  }
+  catch(err){
+ return res.status(401).send({ message:"Unthorized token access"})
+  }
+ 
+}
 
 
 
@@ -77,6 +104,14 @@ app.post("/create-checkout-session", async (req, res) => {
 
 //post funding to database
 app.post("/fundings", async (req, res) => {
+  const { stripeSessionId } = req.body;
+
+  const existing = await fundingsCollection.findOne({ stripeSessionId });
+
+  if (existing) {
+    return res.status(409).send({ message: "Payment already recorded" });
+  }
+
   const fund = {
     ...req.body,
     createdAt: new Date(),
@@ -89,14 +124,34 @@ app.post("/fundings", async (req, res) => {
 
 //get funding from database
 
-app.get("/fundings", async (req, res) => {
+// app.get("/fundings", async (req, res) => {
+//   const result = await fundingsCollection
+//     .find()
+//     .sort({ createdAt: -1 })
+//     .toArray();
+
+//   res.send(result);
+// });
+
+app.get("/fundings", verifyFBToken, async (req, res) => {
+  const email = req.query.email;
+
+  if (!email) {
+    return res.status(400).send({ message: "Email is required" });
+  }
+   if(email !== req.decoded_email){
+    return res.status(403).send({message:"access forbiden"})
+   }
   const result = await fundingsCollection
-    .find()
+    .find({ user_email: email })
     .sort({ createdAt: -1 })
     .toArray();
 
   res.send(result);
 });
+
+
+
 
 
 
@@ -143,31 +198,22 @@ app.get("/donors/search", async(req,res)=>{
 })
 
 
-// search donors by email for dashboard role (api)
-// app.get("/donors/role", async (req, res) => {
-//   const email = req.query.email;
 
-//   const donor = await donorsCollection.findOne({ email });
-
-//   if (!donor) {
-//     return res.status(404).send({ message: "Donor not found" });
-//   }
-
-//   res.send({ role: donor.role });
-// });
-
-/// regax implemented to varify email from many condition
-app.get("/donors/role", async (req, res) => {
+app.get("/donors/role",verifyFBToken, async (req, res) => {
   const email = req.query.email?.toLowerCase().trim();
-
+  const decodedEmail = req.decoded_email;
   if (!email) {
     return res.status(400).send({ message: "Email is required" });
+  }
+
+  if (email !== decodedEmail) {
+    return res.status(403).send({ message: "Forbidden access" });
   }
 
   const donor = await donorsCollection.findOne({
     email: { $regex: `^${email}$`, $options: "i" }
   });
-
+  // console.log("headers", req.headers)
   if (!donor) {
     return res.status(404).send({ message: "Donor not found" });
   }
@@ -329,6 +375,8 @@ app.get("/donationrequests", async (req, res) => {
     ],
   };
 
+
+
   if (status !== "all") {
     query.status = status;
   }
@@ -412,7 +460,7 @@ app.get("/donationrequests/admin", async (req, res) => {
 const { ObjectId } = require("mongodb");
 
 // GET single donation request by ID
-app.get("/donationRequests/:id", async (req, res) => {
+app.get("/donationRequests/:id",verifyFBToken, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -441,7 +489,7 @@ app.get("/donationRequests/all", async(req,res)=>{
 })
 
 // UPDATE donation request by ID
-app.put("/donationRequests/:id", async (req, res) => {
+app.put("/donationRequests/:id",async (req, res) => {
   try {
     const { id } = req.params;
     const updatedData = req.body;
@@ -464,33 +512,50 @@ app.put("/donationRequests/:id", async (req, res) => {
     res.status(500).send({ message: "Failed to update donation request" });
   }
 });
-// app.delete("/donationRequests/:id", verifyToken, async (req, res) => {
 
-// app.delete("/donationRequests/:id", async (req, res) => {
-//   try {
-//     const { id } = req.params;
 
-//     const result = await donationRequestsCollection.deleteOne({
-//       _id: new ObjectId(id),
-//     });
+// app.delete("/donationrequests/:id", async (req, res) => {
+//   const { id } = req.params;
+//   const { email } = req.query; // logged-in user email
 
-//     if (result.deletedCount === 0) {
-//       return res.status(404).send({ message: "Request not found" });
-//     }
-
-//     res.send({ success: true, deletedCount: result.deletedCount });
-//   } catch (error) {
-//     console.error("Delete error:", error);
-//     res.status(500).send({ message: "Failed to delete request" });
+//   if (!email) {
+//     return res.status(401).send({ message: "Unauthorized" });
 //   }
+
+//   const request = await donationRequestsCollection.findOne({
+//     _id: new ObjectId(id),
+//   });
+
+//   if (!request) {
+//     return res.status(404).send({ message: "Request not found" });
+//   }
+
+//   // 🔥 Ownership check
+//   if (request.requesterEmail !== email) {
+//     return res.status(403).send({
+//       message: "You are not allowed to delete this request",
+//     });
+//   }
+
+//   await donationRequestsCollection.deleteOne({
+//     _id: new ObjectId(id),
+//   });
+
+//   res.send({ success: true });
 // });
 
 app.delete("/donationrequests/:id", async (req, res) => {
   const { id } = req.params;
-  const { email } = req.query; // logged-in user email
+  const { email } = req.query;
 
   if (!email) {
     return res.status(401).send({ message: "Unauthorized" });
+  }
+
+  const user = await donorsCollection.findOne({ email });
+
+  if (!user) {
+    return res.status(401).send({ message: "User not found" });
   }
 
   const request = await donationRequestsCollection.findOne({
@@ -501,10 +566,10 @@ app.delete("/donationrequests/:id", async (req, res) => {
     return res.status(404).send({ message: "Request not found" });
   }
 
-  // 🔥 Ownership check
-  if (request.requesterEmail !== email) {
+  // ✅ ALLOW: admin OR creator
+  if (user.role !== "admin" && request.requesterEmail !== email) {
     return res.status(403).send({
-      message: "You are not allowed to delete this request",
+      message: "Not allowed to delete this request",
     });
   }
 
@@ -514,7 +579,6 @@ app.delete("/donationrequests/:id", async (req, res) => {
 
   res.send({ success: true });
 });
-
 
 
 
@@ -556,12 +620,12 @@ app.patch("/donationrequests/status/:id", async (req, res) => {
       return res.status(404).send({ message: "Request not found" });
     }
 
-    // ✅ Only donor can change inprogress → done/pending
+    //  Only donor can change inprogress → done/pending
     if (request.donorEmail !== email) {
       return res.status(403).send({ message: "Unauthorized" });
     }
 
-    // ✅ Cancel = back to pending (not canceled)
+    // Cancel = back to pending (not canceled)
     if (status === "pending") {
       await donationRequestsCollection.updateOne(query, {
         $set: { status: "pending" },
