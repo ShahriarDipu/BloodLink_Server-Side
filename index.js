@@ -14,7 +14,11 @@ app.use(cors())
 
 const admin = require("firebase-admin");
 
-const  serviceAccount = require("./bloodlink-firebase-adminsdk.json");
+// index.js
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
+const serviceAccount = JSON.parse(decoded);
+
+// const  serviceAccount = require("./bloodlink-firebase-adminsdk.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -45,6 +49,7 @@ const verifyFBToken= async(req,res,next)=>{
 
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.kt3oo09.mongodb.net/?appName=Cluster0`;
+const { ObjectId } = require("mongodb");
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -58,7 +63,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
     const db = client.db("bloodLink_db")
     const donorsCollection=db.collection('donors')
      const  donationRequestsCollection= db.collection("donationRequest")
@@ -122,16 +127,6 @@ app.post("/fundings", async (req, res) => {
 });
 
 
-//get funding from database
-
-// app.get("/fundings", async (req, res) => {
-//   const result = await fundingsCollection
-//     .find()
-//     .sort({ createdAt: -1 })
-//     .toArray();
-
-//   res.send(result);
-// });
 
 app.get("/fundings", verifyFBToken, async (req, res) => {
   const email = req.query.email;
@@ -269,14 +264,46 @@ app.patch("/donors/update/:email", async (req, res) => {
 });
 
 ///post donation requests
-app.post("/donationrequests", async (req, res) => {
-  const donationRequest = req.body;
+// app.post("/donationrequests", async (req, res) => {
+//   const donationRequest = req.body;
 
-  const result = await donationRequestsCollection.insertOne(
+//   const result = await donationRequestsCollection.insertOne(
+//     donationRequest
+//   );
+
+//   res.send(result);
+// });
+
+
+app.post("/donationrequests", async (req, res) => {
+  try {
+    const donationRequest = req.body;
+    const { requesterEmail } = donationRequest;
+
+    if (!requesterEmail) {
+      return res.status(400).send({ message: "Requester email is required" });
+    }
+
+    // 🔐 Check user status
+    const user = await donorsCollection.findOne({ email: requesterEmail });
+
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    if (user.status === "blocked") {
+      return res.status(403).send({ message: "Account is blocked" });
+    }
+
+    // ✅ Insert donation request
+     const result = await donationRequestsCollection.insertOne(
     donationRequest
   );
-
-  res.send(result);
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Failed to create donation request" });
+  }
 });
 
 
@@ -332,33 +359,6 @@ app.patch("/donors/role/:id", async (req, res) => {
 
 
 
-/// get donation request based on users
-// app.get("/donationRequests", async (req, res) => {
-//   const { email, status = "all", page = 1, limit = 5 } = req.query;
-
-//   if (!email) {
-//     return res.send({ total: 0, requests: [] });
-//   }
-
-//   const query = { requesterEmail: email };
-
-//   if (status !== "all") {
-//     query.status = status;
-//   }
-
-//   const skip = (page - 1) * limit;
-
-//   const total = await donationRequestsCollection.countDocuments(query);
-
-//   const requests = await donationRequestsCollection
-//     .find(query)
-//     .sort({ createdAt: -1 })
-//     .skip(skip)
-//     .limit(Number(limit))
-//     .toArray();
-
-//   res.send({ total, requests });
-// });
 // GET donation requests for donor dashboard
 app.get("/donationrequests", async (req, res) => {
   const { email, status = "all", page = 1, limit = 5 } = req.query;
@@ -457,7 +457,7 @@ app.get("/donationrequests/admin", async (req, res) => {
 
 
 
-const { ObjectId } = require("mongodb");
+
 
 // GET single donation request by ID
 app.get("/donationRequests/:id",verifyFBToken, async (req, res) => {
@@ -586,20 +586,20 @@ app.delete("/donationrequests/:id", async (req, res) => {
 
 
 
-app.post("/donationrequests", async (req, res) => {
-  const { requesterEmail } = req.body;
+// app.post("/donationrequests", async (req, res) => {
+//   const { requesterEmail } = req.body;
 
-  const user = await donorsCollection.findOne({ email: requesterEmail });
+//   const user = await donorsCollection.findOne({ email: requesterEmail });
 
-  if (user?.status === "blocked") {
-    return res.status(403).send({
-      message: "Account is blocked",
-    });
-  }
+//   if (user?.status === "blocked") {
+//     return res.status(403).send({
+//       message: "Account is blocked",
+//     });
+//   }
 
-  const result = await donationRequestsCollection.insertOne(req.body);
-  res.send(result);
-});
+//   const result = await donationRequestsCollection.insertOne(req.body);
+//   res.send(result);
+// });
 
 
 
@@ -674,7 +674,7 @@ app.patch("/donationrequests/admin/status/:id", async (req, res) => {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
